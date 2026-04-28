@@ -1,20 +1,20 @@
 #include <EEPROM.h>
 
-#include <ICSC.h>
+ #include <ICSC.h>
 
 
 byte sendTheVersion = 1;
 const int numReadings = 20;
 
-int readings[numReadings];  // the readings from the analog input
-int readIndex = 0;          // the index of the current reading
-long total = 0;             // the running total
-int average = 0;            // the average
+int readings[numReadings];      // the readings from the analog input
+int readIndex = 0;              // the index of the current reading
+long total = 0;                  // the running total
+int average = 0;                // the average
 
-int readings2[numReadings];  // the readings from the analog input
-int readIndex2 = 0;          // the index of the current reading
-long total2 = 0;             // the running total
-int average2 = 0;            // the average
+int readings2[numReadings];      // the readings from the analog input
+int readIndex2 = 0;              // the index of the current reading
+long total2 = 0;                  // the running total
+int average2 = 0;                // the average
 
 unsigned long sendingMillis;
 
@@ -87,16 +87,20 @@ byte increment;
 unsigned long every100millis;
 byte dataReceive = 0;
 unsigned long everySecondSend;
-
+// ICSC ICSC(Serial, 'A', 5);
+// byte TIMSK;
+unsigned long remoteOnmillis;
+unsigned long prevremoteOnmillis;
+boolean lastsystemOn = true;
+boolean systemOn = true;
+byte remoteStopper = 1;
+const byte remotePin = 0;
 
 void setup() {
-
-  Serial.begin(57600);  // Change to 57600 baud
-
-  // Use the same style as UI controller:
-  ICSC.begin(7, 57600, 5);  // Station 'A', 57600 baud
+   Serial.begin(115200);
+     ICSC.begin(7, 57600, 5);
   // put your setup code here, to run once:
-
+ 
   ICSC.registerCommand('T', &tempSet);
   ICSC.registerCommand('C', &fromUI);
   ICSC.registerCommand('L', &DATA);
@@ -106,11 +110,10 @@ void setup() {
   //  ICSC.registerCommand('P', &powerSet);//not used for now
   ICSC.process();
 
-  DDRD |= (1 << 4);  //u
-  DDRD |= (1 << 3);  //v
-  DDRD |= (1 << 2);  //w
-  DDRD |= (1 << 6);  //safety
- 
+  DDRD |= (1 << 4);//u
+  DDRD |= (1 << 3);//v
+  DDRD |= (1 << 2);//w
+  DDRD |= (1 << 6);//safety
   pinMode(7, OUTPUT);
   pinMode(18, OUTPUT);
   pinMode(19, OUTPUT);
@@ -120,35 +123,38 @@ void setup() {
   pinMode(25, OUTPUT);
   pinMode(24, OUTPUT);
 
-  totalTime = 99;  //13500Hz 74micro second PERIOD
+  totalTime = 99;//13500Hz 74micro second PERIOD
   offTime = totalTime * 0.25;
   onTime = totalTime * 0.75;
   TCCR1A = 0;
   TCCR1B = 0;
   OCR1A = offTime;
-  TCCR1B |= (1 << CS11) | (1 << WGM12);  //prescaler 8 , CTC mode
-  TIMSK |= (1 << OCIE1A);                //enable OCR1A interrupt
+  TCCR1B |= (1 << CS11) | (1 << WGM12);//prescaler 8 , CTC mode
+  TIMSK |= (1 << OCIE1A);//enable OCR1A interrupt
 
   smdSave = EEPROM.read(2);
-  if (smdSave == 255) smdSave = 30;
+  if (smdSave == 255)smdSave = 30;
 }
 
 ISR(TIMER1_COMPA_vect) {
 
   pwmState = !pwmState;
-  if (pwmState == LOW) {  //on sa relay
+  if (pwmState == LOW) {//on sa relay
     OCR1A = onTime;
-  } else {  //off sa relay
+  }
+  else {//off sa relay
     OCR1A = offTime;
   }
 
   if (safetyPWM == 1) {
     if (pwmState == 1) {
       PORTD &= ~(1 << 6);
-    } else {
+    }
+    else {
       PORTD |= (1 << 6);
     }
-  } else {
+  }
+  else {
     PORTD &= ~(1 << 6);
   }
 
@@ -156,10 +162,12 @@ ISR(TIMER1_COMPA_vect) {
   if (uPWM == 1) {
     if (pwmState == 1) {
       PORTD &= ~(1 << 4);
-    } else {
+    }
+    else {
       PORTD |= (1 << 4);
     }
-  } else {
+  }
+  else {
     PORTD &= ~(1 << 4);
   }
 
@@ -167,10 +175,12 @@ ISR(TIMER1_COMPA_vect) {
   if (vPWM == 1) {
     if (pwmState == 1) {
       PORTD &= ~(1 << 3);
-    } else {
+    }
+    else {
       PORTD |= (1 << 3);
     }
-  } else {
+  }
+  else {
     PORTD &= ~(1 << 3);
   }
 
@@ -178,63 +188,77 @@ ISR(TIMER1_COMPA_vect) {
   if (wPWM == 1) {
     if (pwmState == 1) {
       PORTD &= ~(1 << 2);
-    } else {
+    }
+    else {
       PORTD |= (1 << 2);
     }
-  } else {
+  }
+  else {
     PORTD &= ~(1 << 2);
   }
 }
 
 
 
-void systemIsOn(unsigned char src, char command, unsigned char len, char *data) {
+void systemIsOn(unsigned char src, char command, unsigned char len, char *data)
+{
   systemIsOn_data = *data;
   if (systemIsOn_data == 1) {
-    changeRelay = !changeRelay;
-  } else {
+    changeRelay = ! changeRelay;
+  }
+  else {
     ledmillis = millis();
     intervalblinking = 2000;
     ledstate = 0;
   }
 }
 
-void DATA(unsigned char src, char command, unsigned char len, char *data) {
+void DATA(unsigned char src, char command, unsigned char len, char *data)
+{
   dataReceive = *data;
   if (dataReceive == 0) {
     light_data = 0;
-  } else if (dataReceive == 1) {
+  }
+  else if (dataReceive == 1) {
     light_data = 1;
-  } else if (dataReceive == 2) {
+  }
+  else if (dataReceive == 2) {
     fan_data = 0;
-  } else if (dataReceive == 3) {
+  }
+  else if (dataReceive == 3) {
     fan_data = 1;
-  } else if (dataReceive == 4) {  //off
+  }
+  else if (dataReceive == 4) {//off
     systemIsOn_data = 0;
-  } else if (dataReceive == 5) {  //on
+  }
+  else if (dataReceive == 5) {//on
     systemIsOn_data = 1;
-  } else if (dataReceive == 6) {  //error
+  }
+  else if (dataReceive == 6) {//error
     systemIsOn_data = 3;
-  } else if (dataReceive == 7) {  //smd reset
+  }
+  else if (dataReceive == 7) { //smd reset
     smdSave = 0;
     EEPROM.write(2, smdSave);
   }
 
   if (dataReceive == 4 || dataReceive == 5 || dataReceive == 6) {
     if (systemIsOn_data == 1) {
-      changeRelay = !changeRelay;
-    } else {
+      changeRelay = ! changeRelay;
+    }
+    else {
       ledmillis = millis();
       intervalblinking = 0;
     }
   }
 }
 
-void powerSet(unsigned char src, char command, unsigned char len, char *data) {
+void powerSet(unsigned char src, char command, unsigned char len, char *data)
+{
   powerSet_data = *data;
   switch (powerSet_data) {
     case 20:
-      timeDutyCycle = 80000;  //off time
+      timeDutyCycle = 80000;//off time
       break;
     case 25:
       timeDutyCycle = 75000;
@@ -294,15 +318,19 @@ void powerSet(unsigned char src, char command, unsigned char len, char *data) {
 //}
 
 
-void tempSet(unsigned char src, char command, unsigned char len, char *data) {
+void tempSet(unsigned char src, char command, unsigned char len, char *data)
+{
   tempSet_data = *data;
 }
-void fromUI(unsigned char src, char command, unsigned char len, char *data) {
+void fromUI(unsigned char src, char command, unsigned char len, char *data)
+{
   nineSecondsToErrorSeven = 9;
   versionSend = *data;
 }
 
-void smdReset(unsigned char src, char command, unsigned char len, char *data) {
+void smdReset(unsigned char src, char command, unsigned char len, char *data)
+{
+
 }
 
 
@@ -315,16 +343,15 @@ void loop() {
   if (versionSend == 2) {
     light_data = 0;
     fan_data = 0;
-    ICSC.send(8, 'V', 2, (char *)&sendTheVersion);
+    ICSC.send(8, 'V', 2, (char*)&sendTheVersion);
     delay(10);
-    ICSC.send(8, 'M', 2, (char *)&smdSave);
+    ICSC.send(8, 'M', 2, (char*)&smdSave);
     if (error == 1) {
       delay(10);
-      ICSC.send(8, 'e', 2, (char *)&errorNumber);
+      ICSC.send(8, 'e', 2, (char*)&errorNumber);
     }
     versionSend = 0;
   }
-
 
 
   total = total - readings[readIndex];
@@ -360,13 +387,13 @@ void loop() {
       every100millis = millis();
       switch (increment) {
         case 1:
-          ICSC.send(8, 'x', 2, (char *)&ts1data);
+          ICSC.send(8, 'x', 2, (char*)&ts1data);
           break;
         case 2:
-          ICSC.send(8, 'x', 2, (char *)&smddata);
+          ICSC.send(8, 'x', 2, (char*)&smddata);
           break;
         case 3:
-          ICSC.send(8, 'U', 2, (char *)&systemIsOn_data);
+          ICSC.send(8, 'U', 2, (char*)&systemIsOn_data);
           break;
       }
     }
@@ -376,8 +403,12 @@ void loop() {
     }
   }
 
+  if (errorNumber != 7) {
+    remoteOn();
+  }
 
-  if (systemIsOn_data == 1) {  //---------------------------------------------------on
+
+  if (systemIsOn_data == 1) {//---------------------------------------------------on
     ICSC.process();
     ledstate = 1;
     if (delayRelay == 0) {
@@ -399,7 +430,8 @@ void loop() {
 
           ninetySeconds = 90;
         }
-      } else {
+      }
+      else {
         if (changeRelay == 0)
           wPWM = 0;
         else
@@ -408,7 +440,8 @@ void loop() {
         turnOnRelay = false;
       }
     }
-  } else if (systemIsOn_data == 0) {  //-----------------------------------------------------off
+  }
+  else if (systemIsOn_data == 0) {//-----------------------------------------------------off
     ICSC.process();
     always_ON_until_set_temp_is_reached = 1;
     timeToChangeRelay = 0;
@@ -432,46 +465,49 @@ void loop() {
         ledstate = !ledstate;
         if (ledstate == 0) {
           intervalblinking = 2000;
-        } else {
+        }
+        else {
           intervalblinking = 200;
         }
         ledmillis = millis();
       }
-    } else {
+    }
+    else {
       if (millis() - ledmillis > 100) {
         ledstate = !ledstate;
         ledmillis = millis();
       }
     }
 
-  } else {
+  }
+  else {
     error = 0;
     systemIsOn_data = 0;
     errorNumber = 0;
     delayerrormillis = millis();
   }
 
-  if (millis() - delayerrormillis > 500) {  //delay for half a second after turning On
+  if (millis() - delayerrormillis > 500) { //delay for half a second after turning On
     if (systemIsOn_data == 1) {
-      if (digitalRead(4) == 0) {  //fuse defect
+      if (digitalRead(4) == 0) {//fuse defect
         error = 1;
         errorNumber = 3;
         systemIsOn_data = 0;
       }
 
-      if (average <= 10) {  //short circuit
+      if (average <= 10) { //short circuit
         error = 1;
         errorNumber = 2;
         systemIsOn_data = 0;
       }
 
-      if (average > 990) {  //open circuit
+      if (average > 990) {//open circuit
         error = 1;
         errorNumber = 1;
         systemIsOn_data = 0;
       }
 
-      if (ts1 >= 80) {  // maximum temp reached
+      if (ts1 >= 80) {// maximum temp reached
         error = 1;
         errorNumber = 8;
         systemIsOn_data = 0;
@@ -485,10 +521,11 @@ void loop() {
           smdSave = (int)smd;
           EEPROM.write(2, smdSave);
           delay(10);
-          ICSC.send(8, 'M', 2, (char *)&smdSave);
+          ICSC.send(8, 'M', 2, (char*)&smdSave);
           saveSMD = 1;
         }
-      } else {
+      }
+      else {
         saveSMD = 0;
       }
     }
@@ -500,7 +537,8 @@ void loop() {
 
         if (ninetySeconds == 0) {
           turnOnRelay = true;
-        } else {
+        }
+        else {
           ninetySeconds--;
         }
       }
@@ -509,7 +547,7 @@ void loop() {
       if (timeToChangeRelay >= 3600) {
         timeToChangeRelay = 0;
         wPWM = 1;
-        safetyPWM = 1;
+        safetyPWM = 1 ;
         changeRelay != changeRelay;
       }
     }
@@ -536,10 +574,40 @@ void loop() {
 
   if (error != lasterror) {
     if (error == 1)
-      ICSC.send(8, 'e', 2, (char *)&errorNumber);
+      ICSC.send(8, 'e', 2, (char*)&errorNumber);
     fan_data = 0;
   }
   lasterror = error;
+
+}
+
+void remoteOn() {
+  remoteOnmillis = millis();
+  if (systemOn != lastsystemOn) {
+    ICSC.send(8, 'R', 2, (char*)&systemOn);
+    lastsystemOn = systemOn;
+  }
+
+  if (digitalRead(remotePin) == LOW && remoteStopper == 0) {
+    if (remoteOnmillis - prevremoteOnmillis > 1000) {
+      if (error == 0) {
+        systemIsOn_data = 1;
+      }
+    }
+    systemOn = false;
+  }
+
+  if (digitalRead(remotePin) == HIGH) {
+    remoteStopper = 0;
+    prevremoteOnmillis = millis();
+  }
+
+  if (digitalRead(remotePin) == HIGH && systemOn == false) {
+    systemIsOn_data = 0;
+    error = 0;
+    errorNumber = 0;
+    systemOn = true;
+  }
 }
 
 double Thermister(double RawADC) {
@@ -610,10 +678,12 @@ void errorLed(byte j) {
     digitalWrite(20, col2);
     digitalWrite(19, col3);
     digitalWrite(18, col4);
-  } else {
+  }
+  else {
     digitalWrite(18, 0);
     digitalWrite(19, 0);
     digitalWrite(20, 0);
     digitalWrite(21, 0);
   }
+
 }
